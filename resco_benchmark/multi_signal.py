@@ -72,12 +72,12 @@ class MultiSignal(gym.Env):
         observations = self.state_fn(self.signals)
         self.ts_order = list()
         for ts in observations:
-            if ts == 'top_mgr' or ts == 'bot_mgr': continue     # Not a traffic signal
             o_shape = observations[ts].shape
             self.obs_shape[ts] = o_shape
             o_shape = gym.spaces.Box(low=-np.inf, high=np.inf, shape=o_shape)
             self.ts_order.append(ts)
             self.observation_space.append(o_shape)
+            if ts == 'top_mgr' or ts == 'bot_mgr' or ts == 'bot_left_mgr' or ts == 'bot_right_mgr' or ts == 'top_left_mgr' or ts == 'top_right_mgr': continue     # Not a traffic signal
             self.action_space.append(gym.spaces.Discrete(len(self.phases[ts])))
 
         self.n_agents = self.ts_starter
@@ -174,6 +174,7 @@ class MultiSignal(gym.Env):
         for step in range(self.step_length - self.yellow_length):
             self.step_sim()
         for signal in self.signal_ids:
+            self.signals[signal].set_phase()
             self.signals[signal].observe(self.step_length, self.max_distance)
 
         # observe new state and reward
