@@ -19,9 +19,10 @@ class WaveAgent(Agent):
         acts = []
         for i, observation in enumerate(observations):
             if valid_acts is None:
-                all_press = []
-                for pair in self.phase_pairs:
-                    all_press.append(observation[pair[0]] + observation[pair[1]])
+                all_press = [
+                    observation[pair[0]] + observation[pair[1]]
+                    for pair in self.phase_pairs
+                ]
                 acts.append(np.argmax(all_press))
             else:
                 max_press, max_index = None, None

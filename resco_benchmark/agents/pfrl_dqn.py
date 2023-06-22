@@ -92,10 +92,13 @@ class DQNAgent(Agent):
             self.agent.observe(observation, reward, done, False)
 
     def save(self, path):
-        torch.save({
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-        }, path+'.pt')
+        torch.save(
+            {
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+            },
+            f'{path}.pt',
+        )
 
 
 class SharedDQN(DQN):
@@ -125,10 +128,7 @@ class SharedDQN(DQN):
                 max_val, max_idx = None, None
                 for idx in valid_acts[i]:
                     batch_item_qval = batch_item[idx]
-                    if max_val is None:
-                        max_val = batch_item_qval
-                        max_idx = idx
-                    elif batch_item_qval > max_val:
+                    if max_val is None or batch_item_qval > max_val:
                         max_val = batch_item_qval
                         max_idx = idx
                 batch_argmax.append(max_idx)
@@ -149,10 +149,7 @@ class SharedDQN(DQN):
         else:
             batch_action = batch_argmax
 
-        valid_batch_action = []
-        for i in range(len(batch_action)):
-            valid_batch_action.append(valid_acts[i][batch_action[i]])
-        return valid_batch_action
+        return [valid_acts[i][batch_action[i]] for i in range(len(batch_action))]
 
 
 def select_action_epsilon_greedily(epsilon, random_action_func, greedy_action_func):
@@ -175,7 +172,4 @@ class SharedEpsGreedy(explorers.LinearDecayEpsilonGreedy):
         )
         greedy_str = "greedy" if greedy else "non-greedy"
         self.logger.debug("t:%s a:%s %s", t, a, greedy_str)
-        if num_acts is None:
-            return a
-        else:
-            return a, greedy
+        return a if num_acts is None else (a, greedy)

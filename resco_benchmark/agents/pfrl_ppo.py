@@ -1,3 +1,5 @@
+from typing import Any, List, Mapping, Optional
+
 import numpy as np
 
 import torch
@@ -7,8 +9,10 @@ from pfrl.nn import Branched
 import pfrl.initializers
 from pfrl.agents import PPO
 from pfrl.policies import SoftmaxCategoricalHead
+from pfrl.utils.recurrent import one_step_forward
 
 from resco_benchmark.agents.agent import IndependentAgent, Agent
+from resco_benchmark.agents.maxpressure import MAXPRESSURE
 
 
 def lecun_init(layer, gain=1):
@@ -77,7 +81,10 @@ class PFRLPPOAgent(Agent):
         self.agent.observe(observation, reward, done, False)
 
     def save(self, path):
-        torch.save({
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-        }, path+'.pt')
+        torch.save(
+            {
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+            },
+            f'{path}.pt',
+        )

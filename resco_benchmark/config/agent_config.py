@@ -96,7 +96,8 @@ agent_configs = {
         'agent': IPPO,
         'state': states.drq_norm,
         'reward': rewards.wait_norm,
-        'max_distance': 200
+        'max_distance': 200,
+        'task_phasing':True
     },
     'MPLight': {
         'agent': MPLight,

@@ -13,7 +13,7 @@ from pfrl.q_functions import DiscreteActionValueHead
 class MPLight(SharedAgent):
     def __init__(self, config, obs_act, map_name, thread_number):
         super().__init__(config, obs_act, map_name, thread_number)
-        phase_pairs = signal_configs[map_name]['phase_pairs']
+        phase_pairs = np.array(signal_configs[map_name]['phase_pairs'])
         num_actions = len(phase_pairs)
 
         comp_mask = []
@@ -24,7 +24,7 @@ class MPLight(SharedAgent):
                 if i == j: continue
                 pair_a = phase_pairs[i]
                 pair_b = phase_pairs[j]
-                if len(list(set(pair_a + pair_b))) == 3: zeros[cnt] = 1
+                if len(set(pair_a + pair_b)) == 3: zeros[cnt] = 1
                 cnt += 1
             comp_mask.append(zeros)
         comp_mask = np.asarray(comp_mask)
@@ -40,7 +40,7 @@ class FRAP(nn.Module):
     def __init__(self, config, output_shape, phase_pairs, competition_mask, device):
         super(FRAP, self).__init__()
         self.oshape = output_shape
-        self.phase_pairs = phase_pairs
+        self.phase_pairs = torch.from_numpy(phase_pairs).to(device)
         self.comp_mask = competition_mask
         self.device = device
         self.demand_shape = config['demand_shape']      # Allows more than just queue to be used
@@ -74,17 +74,10 @@ class FRAP(nn.Module):
         states = states.float()
 
         # Expand action index to mark demand input indices
-        extended_acts = []
-        for i in range(batch_size):
-            act_idx = acts[i]
-            pair = self.phase_pairs[act_idx]
-            zeros = torch.zeros(num_movements, dtype=torch.int64, device=self.device)
-            zeros[pair[0]] = 1
-            zeros[pair[1]] = 1
-            extended_acts.append(zeros)
-        extended_acts = torch.stack(extended_acts)
+        act_pairs = self.phase_pairs[acts]
+        extended_acts = torch.zeros(batch_size, num_movements, dtype=torch.int64, device=self.device).scatter_(1, act_pairs, 1)
         phase_embeds = torch.sigmoid(self.p(extended_acts))
-
+            
         phase_demands = []
         for i in range(num_movements):
             phase = phase_embeds[:, i]  # size 4
@@ -95,17 +88,16 @@ class FRAP(nn.Module):
             phase_demands.append(phase_demand_embed)
         phase_demands = torch.stack(phase_demands, 1)
 
-        pairs = []
-        for pair in self.phase_pairs:
-            pairs.append(phase_demands[:, pair[0]] + phase_demands[:, pair[1]])
-
-        rotated_phases = []
-        for i in range(len(pairs)):
-            for j in range(len(pairs)):
-                if i != j: rotated_phases.append(torch.cat((pairs[i], pairs[j]), -1))
-        rotated_phases = torch.stack(rotated_phases, 1)
-        rotated_phases = torch.reshape(rotated_phases,
-                                       (batch_size, self.oshape, self.oshape - 1, 2 * self.lane_embed_units))
+        pairs = torch.transpose(phase_demands[:, self.phase_pairs[:,0]] + phase_demands[:, self.phase_pairs[:,1]], 1, 0)
+        
+        # Create permutations of phase pairs
+        phase_idx = torch.arange(0, self.oshape, device=self.device)
+        phases = torch.dstack(torch.meshgrid(phase_idx, phase_idx, indexing='ij'))
+        mask = torch.ones_like(torch.arange(0, self.oshape*self.oshape)).scatter_(0, torch.arange(0, self.oshape*self.oshape, self.oshape+1), 0)
+        phases = phases.view(self.oshape*self.oshape, 2)[mask.bool()]
+        pair_permutations = pairs[phases]
+        
+        rotated_phases = pair_permutations.view(batch_size, self.oshape, self.oshape - 1, 2 * self.lane_embed_units)
         rotated_phases = rotated_phases.permute(0, 3, 1, 2)  # Move channels up
         rotated_phases = F.relu(self.lane_conv(rotated_phases))  # Conv-20x1x1  pair demand representation
 

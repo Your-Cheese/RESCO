@@ -12,7 +12,5 @@ class MAXPRESSURE(SharedAgent):
 
 class MaxAgent(WaveAgent):
     def act(self, observation, valid_acts=None, reverse_valid=None):
-        repacked_obs = []
-        for obs in observation:
-            repacked_obs.append(obs[1:])
+        repacked_obs = [obs[1:] for obs in observation]
         return super().act(repacked_obs, valid_acts, reverse_valid)

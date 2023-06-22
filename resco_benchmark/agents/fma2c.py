@@ -8,7 +8,6 @@ try:
     from resco_benchmark.agents.ma2c import MA2CAgent
 except ImportError:
     tf = None
-    pass
 
 if tf is None:
     class FMA2C(Agent):
@@ -35,8 +34,8 @@ else:
             self.state = None
             self.acts = None
 
-            self.managers = dict()
-            self.workers = dict()
+            self.managers = {}
+            self.workers = {}
 
             for manager in management:
                 worker_ids = management[manager]
@@ -49,11 +48,12 @@ else:
                     # Get fingerprint size
                     downstream = self.signal_config[worker_id]['downstream']
                     neighbors = [downstream[direction] for direction in downstream]
-                    fp_size = 0
-                    for neighbor in neighbors:
-                        if neighbor is not None and self.supervisors[neighbor] == self.supervisors[worker_id]:
-                            fp_size += obs_act[neighbor][1]  # neighbor's action size
-
+                    fp_size = sum(
+                        obs_act[neighbor][1]  # neighbor's action size
+                        for neighbor in neighbors
+                        if neighbor is not None
+                        and self.supervisors[neighbor] == self.supervisors[worker_id]
+                    )
                     # Get waiting size
                     lane_sets = self.signal_config[worker_id]['lane_sets']
                     lanes = []
@@ -75,34 +75,28 @@ else:
         def fingerprints(self, observation):
             agent_fingerprint = {}
             for agent_id in observation.keys():
+                fingerprints = []
                 if agent_id in self.managers:
-                    fingerprints = []
-                    for neighbor in self.management_neighbors[agent_id]:
-                        neighbor_fp = self.managers[neighbor].fingerprint
-                        fingerprints.append(neighbor_fp)
-                    if len(fingerprints) > 0:
-                        fp = np.concatenate(fingerprints)
-                    else:
-                        fp = np.asarray([])
-                    agent_fingerprint[agent_id] = fp
+                    fingerprints.extend(
+                        self.managers[neighbor].fingerprint
+                        for neighbor in self.management_neighbors[agent_id]
+                    )
                 else:
                     downstream = self.signal_config[agent_id]['downstream']
                     neighbors = [downstream[direction] for direction in downstream]
-                    fingerprints = []
-                    for neighbor in neighbors:
-                        if neighbor is not None and self.supervisors[neighbor] == self.supervisors[agent_id]:
-                            neighbor_fp = self.workers[neighbor].fingerprint
-                            fingerprints.append(neighbor_fp)
-                    if len(fingerprints) > 0:
-                        fp = np.concatenate(fingerprints)
-                    else:
-                        fp = np.asarray([])
-                    agent_fingerprint[agent_id] = fp
+                    fingerprints.extend(
+                        self.workers[neighbor].fingerprint
+                        for neighbor in neighbors
+                        if neighbor is not None
+                        and self.supervisors[neighbor] == self.supervisors[agent_id]
+                    )
+                fp = np.concatenate(fingerprints) if fingerprints else np.asarray([])
+                agent_fingerprint[agent_id] = fp
             return agent_fingerprint
 
         def act(self, observation):
-            acts = dict()
-            full_state = dict()     # Includes fingerprints, but not manager acts
+            acts = {}
+            full_state = {}    # Includes fingerprints, but not manager acts
             fingerprints = self.fingerprints(observation)
             # First get management's acts, they're part of the state for workers
             for agent_id in self.managers:
@@ -121,8 +115,10 @@ else:
                 # Get management goals
                 managing_agent = self.supervisors[agent_id]
                 managing_agents_acts = [acts[managing_agent]]
-                for mgr_neighbor in self.management_neighbors[managing_agent]:
-                    managing_agents_acts.append(acts[mgr_neighbor])
+                managing_agents_acts.extend(
+                    acts[mgr_neighbor]
+                    for mgr_neighbor in self.management_neighbors[managing_agent]
+                )
                 managing_agents_acts = np.asarray(managing_agents_acts)
                 combine = np.concatenate([managing_agents_acts, combine])
 
@@ -145,14 +141,14 @@ else:
                 else:
                     managing_agent = self.supervisors[agent_id]
                     managing_agents_acts = [self.acts[managing_agent]]
-                    for mgr_neighbor in self.management_neighbors[managing_agent]:
-                        managing_agents_acts.append(self.acts[mgr_neighbor])
+                    managing_agents_acts.extend(
+                        self.acts[mgr_neighbor]
+                        for mgr_neighbor in self.management_neighbors[managing_agent]
+                    )
                     managing_agents_acts = np.asarray(managing_agents_acts)
                     combine = np.concatenate([managing_agents_acts, combine])
                     self.workers[agent_id].observe(combine, reward[agent_id], done, info)
 
-                if done:
-                    if info['eps'] % 100 == 0:
-                        if self.saver is not None:
-                            self.saver.save(self.sess, self.config['log_dir'] + 'agent_' + 'checkpoint',
-                                            global_step=info['eps'])
+                if done and info['eps'] % 100 == 0 and self.saver is not None:
+                    self.saver.save(self.sess, self.config['log_dir'] + 'agent_' + 'checkpoint',
+                                    global_step=info['eps'])

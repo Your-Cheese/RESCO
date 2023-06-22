@@ -8,7 +8,6 @@ try:
     import tensorflow as tf
 except ImportError:
     tf = None
-    pass
 
 
 if tf is None:
@@ -45,12 +44,20 @@ else:
                 # Get fingerprint size
                 downstream = self.signal_config[key]['downstream']
                 neighbors = [downstream[direction] for direction in downstream]
-                fp_size = 0
-                for neighbor in neighbors:
-                    if neighbor is not None:
-                        fp_size += obs_act[neighbor][1]     # neighbor's action size
-
-                self.agents[key] = MA2CAgent(config, obs_space, act_space, fp_size, waits_len, 'ma2c'+key + str(thread_number), self.sess)
+                fp_size = sum(
+                    obs_act[neighbor][1]     # neighbor's action size
+                    for neighbor in neighbors
+                    if neighbor is not None
+                )
+                self.agents[key] = MA2CAgent(
+                    config,
+                    obs_space,
+                    act_space,
+                    fp_size,
+                    waits_len,
+                    f'ma2c{key}{str(thread_number)}',
+                    self.sess,
+                )
 
             if sess is None:
                 self.saver = tf.train.Saver(max_to_keep=1)
@@ -63,11 +70,11 @@ else:
             for agent_id in observation.keys():
                 downstream = self.signal_config[agent_id]['downstream']
                 neighbors = [downstream[direction] for direction in downstream]
-                fingerprints = []
-                for neighbor in neighbors:
-                    if neighbor is not None:
-                        neighbor_fp = self.agents[neighbor].fingerprint
-                        fingerprints.append(neighbor_fp)
+                fingerprints = [
+                    self.agents[neighbor].fingerprint
+                    for neighbor in neighbors
+                    if neighbor is not None
+                ]
                 agent_fingerprint[agent_id] = np.concatenate(fingerprints)
             return agent_fingerprint
 
@@ -92,10 +99,8 @@ else:
                 agent = self.agents[agent_id]
                 agent.observe(combine, reward[agent_id], done, info)
 
-            if done:
-                if info['eps'] % 100 == 0:
-                    if self.saver is not None:
-                        self.saver.save(self.sess, self.config['log_dir']+'agent_' + 'checkpoint', global_step=info['eps'])
+            if done and info['eps'] % 100 == 0 and self.saver is not None:
+                self.saver.save(self.sess, self.config['log_dir']+'agent_' + 'checkpoint', global_step=info['eps'])
 
 
     class MA2CAgent(Agent):
@@ -135,10 +140,7 @@ else:
             self.steps_done += 1
 
             if self.steps_done % self.config['batch_size'] == 0 or done:
-                if done:
-                    R = 0
-                else:
-                    R = self.model.forward(observation, False, 'v')
+                R = 0 if done else self.model.forward(observation, False, 'v')
                 self.model.backward(R)
 
             if done:
@@ -173,9 +175,18 @@ else:
             n_ft = model_config['num_ft']
             n_lstm = model_config['num_lstm']
             n_fp = model_config['num_fp']
-            policy = FPLstmACPolicy(n_s, n_a, n_w, n_f, self.n_step, n_fc_wave=n_fw,
-                                    n_fc_wait=n_ft, n_fc_fp=n_fp, n_lstm=n_lstm, name=agent_name)
-            return policy
+            return FPLstmACPolicy(
+                n_s,
+                n_a,
+                n_w,
+                n_f,
+                self.n_step,
+                n_fc_wave=n_fw,
+                n_fc_wait=n_ft,
+                n_fc_fp=n_fp,
+                n_lstm=n_lstm,
+                name=agent_name,
+            )
 
         def _init_scheduler(self, model_config):
             lr_init = model_config['lr_init']
@@ -254,7 +265,7 @@ else:
             self.name = policy_name
             if agent_name is not None:
                 # for multi-agent system
-                self.name += '_' + str(agent_name)
+                self.name += f'_{str(agent_name)}'
             self.n_a = n_a
             self.n_s = n_s
             self.n_step = n_step
@@ -279,9 +290,7 @@ else:
             return outs
 
         def _return_forward_outs(self, out_values):
-            if len(out_values) == 1:
-                return out_values[0]
-            return out_values
+            return out_values[0] if len(out_values) == 1 else out_values
 
         def prepare_loss(self, v_coef, max_grad_norm, alpha, epsilon):
             self.A = tf.placeholder(tf.int32, [self.n_step])
@@ -306,14 +315,15 @@ else:
             self._train = self.optimizer.apply_gradients(list(zip(grads, wts)))
             # monitor training
             if self.name.endswith('_0a'):
-                summaries = []
+                summaries = [tf.summary.scalar(f'loss/{self.name}_policy_loss', policy_loss)]
                 # summaries.append(tf.summary.scalar('loss/%s_entropy_loss' % self.name, entropy_loss))
-                summaries.append(tf.summary.scalar('loss/%s_policy_loss' % self.name, policy_loss))
-                summaries.append(tf.summary.scalar('loss/%s_value_loss' % self.name, value_loss))
-                summaries.append(tf.summary.scalar('loss/%s_total_loss' % self.name, self.loss))
+                summaries.append(tf.summary.scalar(f'loss/{self.name}_value_loss', value_loss))
+                summaries.append(tf.summary.scalar(f'loss/{self.name}_total_loss', self.loss))
                 # summaries.append(tf.summary.scalar('train/%s_lr' % self.name, self.lr))
                 # summaries.append(tf.summary.scalar('train/%s_entropy_beta' % self.name, self.entropy_coef))
-                summaries.append(tf.summary.scalar('train/%s_gradnorm' % self.name, self.grad_norm))
+                summaries.append(
+                    tf.summary.scalar(f'train/{self.name}_gradnorm', self.grad_norm)
+                )
                 self.summary = tf.summary.merge(summaries)
 
 
@@ -348,17 +358,14 @@ else:
             else:
                 ob = self.ob_bw
                 done = self.done_bw
-            if out_type == 'pi':
-                states = self.states[0]
-            else:
-                states = self.states[1]
+            states = self.states[0] if out_type == 'pi' else self.states[1]
             if self.n_w == 0:
-                h = fc(ob, out_type + '_fcw', self.n_fc_wave)
+                h = fc(ob, f'{out_type}_fcw', self.n_fc_wave)
             else:
-                h0 = fc(ob[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
-                h1 = fc(ob[:, self.n_s:], out_type + '_fct', self.n_fc_wait)
+                h0 = fc(ob[:, :self.n_s], f'{out_type}_fcw', self.n_fc_wave)
+                h1 = fc(ob[:, self.n_s:], f'{out_type}_fct', self.n_fc_wait)
                 h = tf.concat([h0, h1], 1)
-            h, new_states = lstm(h, done, states, out_type + '_lstm')
+            h, new_states = lstm(h, done, states, f'{out_type}_lstm')
             out_val = self._build_out_net(h, out_type)
             return out_val, new_states
 
@@ -382,10 +389,7 @@ else:
 
         def backward(self, sess, obs, acts, dones, Rs, Advs, cur_lr, cur_beta,
                      summary_writer=None, global_step=None):
-            if summary_writer is None:
-                ops = self._train
-            else:
-                ops = [self.summary, self._train]
+            ops = self._train if summary_writer is None else [self.summary, self._train]
             outs = sess.run(ops,
                             {self.ob_bw: obs,
                              self.done_bw: dones,
@@ -440,18 +444,19 @@ else:
             else:
                 ob = self.ob_bw
                 done = self.done_bw
-            if out_type == 'pi':
-                states = self.states[0]
-            else:
-                states = self.states[1]
-            h0 = fc(ob[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
-            h1 = fc(ob[:, (self.n_s + self.n_w):], out_type + '_fcf', self.n_fc_fp)
+            states = self.states[0] if out_type == 'pi' else self.states[1]
+            h0 = fc(ob[:, :self.n_s], f'{out_type}_fcw', self.n_fc_wave)
+            h1 = fc(ob[:, (self.n_s + self.n_w):], f'{out_type}_fcf', self.n_fc_fp)
             if self.n_w == 0:
                 h = tf.concat([h0, h1], 1)
             else:
-                h2 = fc(ob[:, self.n_s: (self.n_s + self.n_w)], out_type + '_fct', self.n_fc_wait)
+                h2 = fc(
+                    ob[:, self.n_s : (self.n_s + self.n_w)],
+                    f'{out_type}_fct',
+                    self.n_fc_wait,
+                )
                 h = tf.concat([h0, h1, h2], 1)
-            h, new_states = lstm(h, done, states, out_type + '_lstm')
+            h, new_states = lstm(h, done, states, f'{out_type}_lstm')
             out_val = self._build_out_net(h, out_type)
             return out_val, new_states
 
@@ -466,13 +471,14 @@ else:
             shape = tuple(shape)
             if len(shape) == 2:     # fc: in, out
                 flat_shape = shape
-            elif (len(shape) == 3) or (len(shape) == 4):    # 1d/2dcnn: (in_h), in_w, in_c, out
+            elif len(shape) in {3, 4}:    # 1d/2dcnn: (in_h), in_w, in_c, out
                 flat_shape = (np.prod(shape[:-1]), shape[-1])
             a = np.random.standard_normal(flat_shape)
             u, _, v = np.linalg.svd(a, full_matrices=False)
             q = u if u.shape == flat_shape else v   # pick the one with the correct shape
             q = q.reshape(shape)
             return (scale * q).astype(np.float32)
+
         return _ortho_init
 
 
