@@ -14,16 +14,19 @@ class Agent(object):
 
 
 class IndependentAgent(Agent):
-    def __init__(self, config, obs_act, map_name, thread_number):
+    def __init__(self, env, config, obs_act, map_name, thread_number):
         super().__init__()
+        self.env = env
         self.config = config
         self.agents = {}
 
     def act(self, observation):
-        return {
-            agent_id: self.agents[agent_id].act(observation[agent_id])
-            for agent_id in observation.keys()
-        }
+        acts = {}
+        for agent_id in observation.keys():
+            if self.config["task_phasing"]:
+                self.agents[agent_id].agent.maxpressure_act = self.env.maxpressure_act[agent_id]
+            acts[agent_id] = self.agents[agent_id].act(observation[agent_id])
+        return acts
 
     def observe(self, observation, reward, done, info):
         for agent_id in observation.keys():

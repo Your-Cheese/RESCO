@@ -90,14 +90,19 @@ agent_configs = {
         'EPS_START': 1.0,
         'EPS_END': 0.0,
         'EPS_DECAY': 220,
-        'TARGET_UPDATE': 500
+        'TARGET_UPDATE': 500,
+        'task_phasing':True,
+        'phase_step':0.015,
+        'phasing_update_window':2,
     },
     'IPPO': {
         'agent': IPPO,
         'state': states.drq_norm,
         'reward': rewards.wait_norm,
         'max_distance': 200,
-        'task_phasing':True
+        'task_phasing':True,
+        'phase_step':0.015,
+        'phasing_update_window':50,
     },
     'MPLight': {
         'agent': MPLight,
@@ -110,7 +115,10 @@ agent_configs = {
         'EPS_END': 0.0,
         'EPS_DECAY': 220,
         'TARGET_UPDATE': 500,
-        'demand_shape': 1
+        'demand_shape': 1,
+        'task_phasing':True,
+        'phase_step':0.015,
+        'phasing_update_window':2,
     },
     'FMA2C': {
         'agent': FMA2C,

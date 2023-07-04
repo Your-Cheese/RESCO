@@ -4,6 +4,8 @@ import traci
 import sumolib
 import gym
 from resco_benchmark.traffic_signal import Signal
+from resco_benchmark.agents.maxpressure import MAXPRESSURE
+from resco_benchmark.states import mplight
 
 
 class MultiSignal(gym.Env):
@@ -63,7 +65,6 @@ class MultiSignal(gym.Env):
             for lightID in self.signal_ids
         }
 
-
         self.signals = {}
 
         self.all_ts_ids = lights if len(lights) > 0 else self.sumo.trafficlight.getIDList()
@@ -95,6 +96,9 @@ class MultiSignal(gym.Env):
             ]: continue     # Not a traffic signal
             self.action_space.append(gym.spaces.Discrete(len(self.phases[ts])))
 
+        self.observation_space = self.observation_space[0]
+        self.action_space = self.action_space[0]
+
         self.n_agents = self.ts_starter
 
         self.run = 0
@@ -108,6 +112,12 @@ class MultiSignal(gym.Env):
             os.makedirs(log_dir+self.connection_name)
         self.sumo_cmd = None
         print('Connection ID', self.connection_name)
+
+        self.maxpressure_agent = MAXPRESSURE(None, None, map_name, None)
+        self.maxpressure_act = None
+
+    def pressure_act(self):
+        return [self.maxpressure_act[item] for item in self.maxpressure_act][0]
 
     def step_sim(self):
         # The monaco scenario expects .25s steps instead of 1s, account for that here.
@@ -141,11 +151,8 @@ class MultiSignal(gym.Env):
                 self.log_dir, self.connection_name, f'tripinfo_{self.run}.xml'
             ),
             '--tripinfo-output.write-unfinished',
-            '--no-step-log',
-            'True',
-            '--no-warnings',
-            'True',
-        ]
+                          '--no-step-log', 'True',
+                          '--no-warnings', 'True']
         if self.libsumo:
             traci.start(self.sumo_cmd)
             self.sumo = traci
@@ -166,19 +173,23 @@ class MultiSignal(gym.Env):
             self.signals[ts].signals = self.signals
             self.signals[ts].observe(self.step_length, self.max_distance)
 
+        self.maxpressure_act = self.maxpressure_agent.act(mplight(self.signals))
         if self.gymma:
             states = self.state_fn(self.signals)
-            return [states[ts] for ts in self.ts_order]
+            rets = [states[ts] for ts in self.ts_order]
+            return rets[0].flatten()
+
         return self.state_fn(self.signals)
 
     def step(self, act):
         if self.gymma:
-            dict_act = {ts: act[i] for i, ts in enumerate(self.ts_order)}
+            dict_act = {ts: act for ts in self.ts_order}
             act = dict_act
 
         # Send actions to their signals
         for signal in self.signals:
             self.signals[signal].prep_phase(act[signal])
+
         for _ in range(self.yellow_length):
             self.step_sim()
         for signal in self.signal_ids:
@@ -186,7 +197,6 @@ class MultiSignal(gym.Env):
         for _ in range(self.step_length - self.yellow_length):
             self.step_sim()
         for signal in self.signal_ids:
-            # self.signals[signal].set_phase()
             self.signals[signal].observe(self.step_length, self.max_distance)
 
         # observe new state and reward
@@ -196,12 +206,13 @@ class MultiSignal(gym.Env):
         self.calc_metrics(rewards)
 
         done = self.sumo.simulation.getTime() >= self.end_time
+        self.maxpressure_act = self.maxpressure_agent.act(mplight(self.signals))
         if self.gymma:
             obss, rww = [], []
             for ts in self.ts_order:
                 obss.append(observations[ts])
                 rww.append(rewards[ts])
-            return obss, rww, [done], {'eps': self.run}
+            return obss[0].flatten(), rww[0], done, {'eps': self.run}
         return observations, rewards, done, {'eps': self.run}
 
     def calc_metrics(self, rewards):

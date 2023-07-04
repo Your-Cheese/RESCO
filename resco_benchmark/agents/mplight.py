@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from resco_benchmark.agents.agent import SharedAgent
 from resco_benchmark.agents.pfrl_dqn import DQNAgent
@@ -11,8 +12,11 @@ from pfrl.q_functions import DiscreteActionValueHead
 
 
 class MPLight(SharedAgent):
-    def __init__(self, config, obs_act, map_name, thread_number):
+    def __init__(self, env, config, obs_act, map_name, thread_number):
         super().__init__(config, obs_act, map_name, thread_number)
+        self.env = env
+        self.writer = SummaryWriter()
+        config["writer"] = self.writer
         phase_pairs = np.array(signal_configs[map_name]['phase_pairs'])
         num_actions = len(phase_pairs)
 
@@ -34,6 +38,33 @@ class MPLight(SharedAgent):
         self.valid_acts = signal_configs[map_name]['valid_acts']
         model = FRAP(config, num_actions, phase_pairs, comp_mask, self.device)
         self.agent = DQNAgent(config, num_actions, model, num_agents=config['num_lights'])
+
+    def act(self, observation):
+        if self.reverse_valid is None and self.valid_acts is not None:
+            self.reverse_valid = {}
+            for signal_id in self.valid_acts:
+                self.reverse_valid[signal_id] = dict(zip(self.valid_acts[signal_id].values(), self.valid_acts[signal_id].keys()))
+
+        batch_obs = list(observation.values())
+        if self.valid_acts is None:
+            batch_valid = None
+            batch_reverse = None
+        else:
+            batch_valid = [self.valid_acts.get(agent_id) for agent_id in
+                           observation.keys()]
+            batch_reverse = [self.reverse_valid.get(agent_id) for agent_id in
+                          observation.keys()]
+            
+        if self.config["task_phasing"]:
+            self.agent.agent.maxpressure_act = self.env.maxpressure_act
+
+        batch_acts = self.agent.act(batch_obs,
+                                valid_acts=batch_valid,
+                                reverse_valid=batch_reverse)
+        return {
+            agent_id: batch_acts[i]
+            for i, agent_id in enumerate(observation.keys())
+        }
 
 
 class FRAP(nn.Module):

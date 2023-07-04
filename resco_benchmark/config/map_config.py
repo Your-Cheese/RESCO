@@ -2,7 +2,7 @@ map_configs = {
     'grid4x4': {
         'lights': [],
         'net': 'environments/grid4x4/grid4x4.net.xml',
-        'route': 'environments/grid4x4',
+        'route': 'environments/grid4x4/grid4x4',
         'step_length': 10,
         'yellow_length': 3,
         'step_ratio': 1,
@@ -13,7 +13,7 @@ map_configs = {
     'arterial4x4': {
         'lights': [],
         'net': 'environments/arterial4x4/arterial4x4.net.xml',
-        'route': 'environments/arterial4x4',
+        'route': 'environments/arterial4x4/arterial4x4',
         'step_length': 5,
         'yellow_length': 2,
         'step_ratio': 1,

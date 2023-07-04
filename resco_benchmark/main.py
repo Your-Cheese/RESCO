@@ -1,6 +1,6 @@
 import os
 import multiprocessing as mp
-
+import time
 
 from multi_signal import MultiSignal
 import argparse
@@ -19,13 +19,13 @@ def main():
     ap.add_argument("--procs", type=int, default=1)
     ap.add_argument("--map", type=str, default='ingolstadt1',
                     choices=['grid4x4', 'arterial4x4', 'ingolstadt1', 'ingolstadt7', 'ingolstadt21',
-                             'cologne1', 'cologne3', 'cologne8',
-                             ])
+                             'cologne1', 'cologne3', 'cologne8'])
     ap.add_argument("--pwd", type=str, default=os.path.dirname(__file__))
     ap.add_argument("--log_dir", type=str, default=os.path.join(os.path.dirname(os.getcwd()), f'results{os.sep}'))
     ap.add_argument("--gui", type=bool, default=False)
     ap.add_argument("--libsumo", type=bool, default=False)
     ap.add_argument("--tr", type=int, default=0)  # Can't multi-thread with libsumo, provide a trial number
+    ap.add_argument("--temporal_phasing", type=bool, default=False)
     args = ap.parse_args()
 
     if args.libsumo and 'LIBSUMO_AS_TRACI' not in os.environ:
@@ -105,7 +105,7 @@ def run_trial(args, trial):
         ]
         for key in env.obs_shape
     }
-    agent = alg(agt_config, obs_act, args.map, trial)
+    agent = alg(env, agt_config, obs_act, args.map, trial)
 
     for _ in range(args.eps):
         obs = env.reset()
@@ -118,4 +118,6 @@ def run_trial(args, trial):
 
 
 if __name__ == '__main__':
+    start_time = time.perf_counter()
     main()
+    print(f"end time: {time.perf_counter()-start_time}")
